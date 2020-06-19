@@ -6,20 +6,195 @@ output:
 ---
 
 
+
 ## Loading and preprocessing the data
 
+In order to load the data, we will change the directory and obtain the file from the folder it is stored in.
+```{r echo=TRUE}
+setwd("~/R/Data")
+activity <- read.csv("activity.csv")
+```
+
+Using `class(activity[["date"]])`, we find that the date column is stored as characters. We will convert it into Date format to suit our purposes.
+
+```{r echo=TRUE}
+activity[["date"]] <- as.Date(activity[["date"]])
+
+```
+
+After loading the data, we will load the required libraries.
+```{r echo=TRUE}
+library(lattice)
+library(dplyr)
+```
 
 
 ## What is mean total number of steps taken per day?
+
+We will tackle this topic in 'steps'. First we take the steps column of the `activity` dataset. We group that dataset by `date` into a dataframe. Then we take the sum of steps for every date and store it in a new vector `dailyTotalSteps`. This process is easily implemented using the pipe operator `%>%`.
+```{r echo=TRUE}
+dailyTotalSteps <- activity[["steps"]] %>%
+  split(as.factor(activity[["date"]])) %>%
+  data.frame() %>%
+  colSums(na.rm=T)
+```
+
+Now we can plot this new vector as a histogram.
+```{r echo=TRUE}
+hist(dailyTotalSteps,freq=T,col="yellow")
+```
+
+We can also calculate the mean and median of `dailyTotalSteps`
+```{r echo=TRUE}
+
+mean(dailyTotalSteps)
+median(dailyTotalSteps)
+
+```
 
 
 
 ## What is the average daily activity pattern?
 
+Here, we will repeat the process described in the previous part, but instead of grouping by `date`, we will group by `interval`. Since we want the mean steps for every interval, we will use the `colMeans` function instead of `colSums`.
+```{r echo=TRUE}
+stepsByInterval <- activity[["steps"]] %>%
+  split(as.factor(activity[["interval"]])) %>%
+  data.frame() %>%
+  colMeans(na.rm=T)
+```
+
+Now that we have the data for the y-axis, we store the values of unique intervals in a vector for the x-axis.
+```{r echo=TRUE}
+Intervals <- unique(activity[["interval"]])
+```
+
+Now we simply plot the required time series plot.
+```{r echo=TRUE}
+plot(Intervals, stepsByInterval, type = "l", ylab = "Average Steps for Interval")
+```
+
+We can also find the interval with the maximum mean steps. We will store the value for maximum mean steps in `maxAvgSteps` and print all intervals where the value of mean steps is equal to this maximum.
+Note that from the graph we know there is only one absolute maximum, which occurs just prior to 10 am. However, if there were multiple intervals where the average steps were maximum, this would return a vector of all intervals.
+```{r echo=TRUE}
+maxAvgSteps <- max(stepsByInterval)
+stepsByInterval[stepsByInterval==maxAvgSteps]
+```
+
+Here we can confirm our hypothesis about the interval with maximum mean steps.
 
 
 ## Imputing missing values
 
+First, we calculate the number of `NA` entries in the dataset. We have to only check the `steps` column as it is the only column where values are recorded; the other columns are continuous.
+```{r echo=TRUE}
+sum(is.na(activity[["steps"]]))
+```
+
+Our method of imputation will be to use the mean for the 5-minute interval where the value is missing. We will impute the data using this strategy.
+```{r echo=TRUE}
+for(i in seq(nrow(activity))) {
+  if(is.na(activity[["steps"]][i])) {
+    activity[["steps"]][i] <- stepsByInterval[[paste("X",activity[["interval"]][i], sep="")]]
+  }
+}
+```
+
+
+Now we will recalculate the daily total steps for all days.
+```{r echo=TRUE}
+dailyTotalSteps <- activity[["steps"]] %>%
+  split(as.factor(activity[["date"]])) %>%
+  data.frame() %>%
+  colSums()
+```
+
+We will plot the histogram and calulate the mean and median of the dataset with imputed values to compare it with the original dataset.
+```{r echo=TRUE}
+hist(dailyTotalSteps,freq=T,col="yellow")
+mean(dailyTotalSteps)
+median(dailyTotalSteps)
+```
+
+The frequency of the higher values in the histogram increases, whereas the frequency of lower values decreases. This is because previously the `NA` values were ignored and had a zero contribution to the total, but in the new dataset, those values contributed to the total steps and shifted the frequency peak rightwards.
+
+The mean and median were unchanged.
 
 
 ## Are there differences in activity patterns between weekdays and weekends?
+
+
+We start with an empty character vector `weekd`.
+```{r echo=TRUE}
+weekd<- character(nrow(activity))
+```
+
+
+Then we store weekday/weekend for each row in it.
+```{r echo=TRUE}
+for(i in seq(nrow(activity))) {
+weekd[i]<- if(weekdays(activity[["date"]])[i] %in% c("Sunday","Saturday")) {
+  "weekend"
+} else {
+    "weekday"}
+}
+```
+
+Finally, we convert it from a character vector to a factor.
+```{r echo=TRUE}
+weekd <- factor(weekd)
+```
+
+
+Now, we will create a dataframe that will enable us to plot the panel plot.
+We start with creating stepsByInterval dataframe for weekends only.
+
+```{r echo=TRUE}
+weekendSBI <- activity[["steps"]][weekd=="weekend"] %>%
+  split(as.factor(activity[["interval"]][weekd=="weekend"])) %>%
+  data.frame() %>%
+  colMeans(na.rm=T)
+```
+
+
+Then we create one for weekdays only.
+```{r echo=TRUE}
+weekdaySBI <- activity[["steps"]][weekd=="weekday"] %>%
+  split(as.factor(activity[["interval"]][weekd=="weekday"])) %>%
+  data.frame() %>%
+  colMeans(na.rm=T)
+```
+
+
+Now we create weekend and weekday factors that are separated.
+```{r echo=TRUE}
+dayFactor <- gl(1,288)
+levels(dayFactor) <- c("weekday")
+endFactor <- gl(1,288)
+levels(endFactor) <- c("weekend")
+```
+
+
+We combine these separately into different dataframes, where x stores weekday data and y stores weekend data. 
+```{r echo=TRUE}
+x<- cbind.data.frame(Intervals, weekdaySBI, dayFactor)
+y<- cbind.data.frame(Intervals, weekendSBI, endFactor)
+```
+
+We rename the column names for these dataframes.
+```{r echo=TRUE}
+names(x) <- c("Intervals", "SBI", "weekd")
+names(y) <- c("Intervals", "SBI", "weekd")
+```
+
+Finally, we merge the dataframes into one dataframe that can be plotted.
+```{r echo=TRUE}
+mergedSBI <- merge(x,y,by=intersect(names(x), names(y)), all.x=T, all.y=T)
+```
+
+Using the `lattice` package, we can plot the required panel plot.
+```{r echo=TRUE}
+xyplot(mergedSBI$SBI ~ Intervals | weekd, type="l", data=mergedSBI, ylab = "Steps by Interval", layout=c(1,2))
+```
+
+
